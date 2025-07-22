@@ -1,3 +1,9 @@
-git rm .python-version
-git commit -m "Remove .python-version to force Render to use 3.10.13"
-git push
+services:
+  - type: web
+    name: mysavebot
+    env: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python main.py
+    runtime: python
+    pythonVersion: 3.10.13
