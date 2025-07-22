@@ -3,7 +3,7 @@ services:
     name: mysavebot
     env: python
     plan: free
-    buildCommand: ""
+    buildCommand: "./build.sh"
     startCommand: python main.py
     runtime: python
     pythonVersion: 3.9.13
