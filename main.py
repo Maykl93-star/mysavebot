@@ -1,65 +1,64 @@
 import logging
-import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import FSInputFile
-from aiogram.enums import ParseMode
-from aiogram.utils.markdown import hbold
-from aiogram import F
-from aiogram.filters import CommandStart, Command
-
-import yt_dlp
 import os
+from aiogram import Bot, Dispatcher, executor, types
+from yt_dlp import YoutubeDL
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_TOKEN = os.getenv("BOT_TOKEN")
 
-dp = Dispatcher()
-bot = Bot(BOT_TOKEN, parse_mode=ParseMode.HTML)
+# Включаем логирование
+logging.basicConfig(level=logging.INFO)
 
-@dp.message(CommandStart())
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "👋 Привет! Я — MySaveBot\n"
-        "📥 Скачиваю видео из:\n"
-        "• YouTube (видео и Shorts)\n"
-        "• TikTok (без водяных знаков)\n"
-        "• Instagram (Reels, посты, сторис)\n"
-        "🔗 Просто пришли ссылку — получи видео\n"
-        "❓ Помощь: /help"
+# Инициализируем бота и диспетчер
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+
+# Настройки yt-dlp с поддержкой cookies.txt
+ydl_opts = {
+    'outtmpl': '%(title)s.%(ext)s',
+    'format': 'bestvideo+bestaudio/best',
+    'noplaylist': True,
+    'cookiefile': 'cookies.txt',
+    'quiet': True,
+    'merge_output_format': 'mp4',
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+}
+
+@dp.message_handler(commands=['start'])
+async def send_welcome(message: types.Message):
+    await message.reply("👋 Привет! Я — MySaveBot\n\n🎬 Скачиваю видео из:\n• YouTube\n• TikTok\n• Instagram\n\n🔗 Просто пришли ссылку — и получи видео!\n\n/help — инструкция")
+
+@dp.message_handler(commands=['help'])
+async def send_help(message: types.Message):
+    await message.reply(
+        "📌 *Как пользоваться ботом:*
+"
+        "1. Скопируй ссылку на видео из YouTube, TikTok или Instagram
+"
+        "2. Отправь её мне сюда
+"
+        "3. Я пришлю тебе файл с видео или фото
+
+"
+        "🔍 *Максимальное качество:* я стараюсь скачивать видео и фото в самом высоком доступном качестве.
+"
+        "📸 Если доступен оригинал — отправлю его файлом.
+"
+        "💡 Если бот не отвечает — проверь ссылку или попробуй позже.",
+        parse_mode="Markdown"
     )
 
-@dp.message(Command("help"))
-async def cmd_help(message: types.Message):
-    await message.answer("Просто пришли мне ссылку на видео с YouTube, TikTok или Instagram.")
-
-@dp.message(F.text.contains("http"))
+@dp.message_handler()
 async def download_video(message: types.Message):
     url = message.text.strip()
-    await message.answer("⏳ Скачиваю...")
+    await message.reply("🔄 Обрабатываю ссылку...")
 
     try:
-        ydl_opts = {
-            'outtmpl': 'video.%(ext)s',
-            'format': 'bestvideo+bestaudio/best',
-            'merge_output_format': 'mp4'
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
             filename = ydl.prepare_filename(info)
-            if not filename.endswith('.mp4'):
-                filename += '.mp4'
-
-        video = FSInputFile(filename)
-        await message.answer_video(video)
+            ydl.download([url])
+        with open(filename, 'rb') as video:
+            await message.reply_document(video)
         os.remove(filename)
-
     except Exception as e:
-        logging.exception(e)
-        await message.answer("⚠️ Ошибка при скачивании. Проверь ссылку или попробуй позже.")
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+        await message.reply(f"⚠️ Ошибка при скачивании: {e}")
