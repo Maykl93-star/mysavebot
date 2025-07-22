@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: mysavebot
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: python main.py
+    runtime: python
+    pythonVersion: 3.10.13
