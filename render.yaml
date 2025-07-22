@@ -6,4 +6,5 @@ services:
     buildCommand: ""
     startCommand: python main.py
     runtime: python
-    pythonVersion: 3.10.13
+    pythonVersion: 3.9.13
+
