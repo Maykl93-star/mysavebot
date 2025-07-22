@@ -1,64 +1,72 @@
-import logging
 import os
-from aiogram import Bot, Dispatcher, executor, types
-from yt_dlp import YoutubeDL
+import asyncio
+import yt_dlp
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import FSInputFile
+from aiogram.enums import ParseMode
+from aiogram.filters import Command
+from aiogram.utils.markdown import hbold
+from aiogram import F
+from aiogram.types import Message
 
-API_TOKEN = os.getenv("BOT_TOKEN")
+from dotenv import load_dotenv
+load_dotenv()
 
-# Включаем логирование
-logging.basicConfig(level=logging.INFO)
+TOKEN = os.getenv("BOT_TOKEN")
 
-# Инициализируем бота и диспетчер
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-# Настройки yt-dlp с поддержкой cookies.txt
-ydl_opts = {
-    'outtmpl': '%(title)s.%(ext)s',
-    'format': 'bestvideo+bestaudio/best',
-    'noplaylist': True,
-    'cookiefile': 'cookies.txt',
-    'quiet': True,
-    'merge_output_format': 'mp4',
-    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-}
+@dp.message(Command("start"))
+async def start_cmd(message: Message):
+    await message.answer("👋 Привет! Я — MySaveBot\nПросто пришли мне ссылку на видео с YouTube, TikTok или Instagram.\n\nКоманда помощи: /help")
 
-@dp.message_handler(commands=['start'])
-async def send_welcome(message: types.Message):
-    await message.reply("👋 Привет! Я — MySaveBot\n\n🎬 Скачиваю видео из:\n• YouTube\n• TikTok\n• Instagram\n\n🔗 Просто пришли ссылку — и получи видео!\n\n/help — инструкция")
-
-@dp.message_handler(commands=['help'])
-async def send_help(message: types.Message):
-    await message.reply(
-        "📌 *Как пользоваться ботом:*
-"
-        "1. Скопируй ссылку на видео из YouTube, TikTok или Instagram
-"
-        "2. Отправь её мне сюда
-"
-        "3. Я пришлю тебе файл с видео или фото
-
-"
-        "🔍 *Максимальное качество:* я стараюсь скачивать видео и фото в самом высоком доступном качестве.
-"
-        "📸 Если доступен оригинал — отправлю его файлом.
-"
-        "💡 Если бот не отвечает — проверь ссылку или попробуй позже.",
-        parse_mode="Markdown"
+@dp.message(Command("help"))
+async def help_cmd(message: Message):
+    text = (
+        f"📌 Как пользоваться ботом:\n\n"
+        f"1. Скопируй ссылку на видео из YouTube, TikTok или Instagram\n"
+        f"2. Отправь эту ссылку в чат\n"
+        f"3. Получи файл в лучшем доступном качестве 🎬\n\n"
+        f"⚙️ Поддерживаются:\n"
+        f"• YouTube (видео и Shorts)\n"
+        f"• TikTok (без водяных знаков)\n"
+        f"• Instagram (Reels, посты, сторис)\n\n"
+        f"Если что-то не работает — попробуй снова или напиши поддержку."
     )
+    await message.answer(text)
 
-@dp.message_handler()
+@dp.message(F.text.startswith("http"))
 async def download_video(message: types.Message):
     url = message.text.strip()
-    await message.reply("🔄 Обрабатываю ссылку...")
+
+    msg = await message.reply("🔄 Загружаю...")
+
+    ydl_opts = {
+        'outtmpl': 'downloads/%(title).70s.%(ext)s',
+        'format': 'bestvideo+bestaudio/best',
+        'merge_output_format': 'mp4',
+        'quiet': True,
+        'noplaylist': True,
+    }
+
+    os.makedirs("downloads", exist_ok=True)
 
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
-            ydl.download([url])
-        with open(filename, 'rb') as video:
-            await message.reply_document(video)
+
+        video = FSInputFile(filename)
+        await message.reply_video(video, caption=f"{hbold('✅ Готово!')} Ваше видео сохранено в максимальном качестве.")
+
+        await msg.delete()
         os.remove(filename)
+
     except Exception as e:
-        await message.reply(f"⚠️ Ошибка при скачивании: {e}")
+        await msg.edit_text(f"❌ Ошибка при загрузке:\n{e}")
+
+if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(dp.start_polling(bot))
