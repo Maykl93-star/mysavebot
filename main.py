@@ -1,54 +1,60 @@
 import os
-import logging
+import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message
+from aiogram.types import FSInputFile
 from aiogram.utils import executor
-import yt_dlp
+from yt_dlp import YoutubeDL
 
-# Настройки логирования
-logging.basicConfig(level=logging.INFO)
-
-# Токен Telegram-бота
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# YDL Опции (лучшее качество без водяных знаков)
-ydl_opts = {
-    'format': 'bestvideo+bestaudio/best',
-    'outtmpl': 'downloads/%(title)s.%(ext)s',
-    'quiet': True,
-    'merge_output_format': 'mp4',
-    'noplaylist': True
-}
-
-# Обработчик команд
-@dp.message_handler(commands=['start', 'help'])
-async def send_welcome(message: Message):
-    await message.reply("Привет! Отправь мне ссылку на видео с YouTube, Instagram или TikTok, и я скачаю его для тебя без водяных знаков в лучшем качестве.")
-
-# Обработчик ссылок
-@dp.message_handler(lambda message: any(domain in message.text for domain in ["youtu", "instagram", "tiktok"]))
-async def download_video(message: Message):
+@dp.message_handler()
+async def download_handler(message: types.Message):
     url = message.text.strip()
-    await message.reply("🔄 Загружаю видео, подожди пару секунд...")
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            filename = ydl.prepare_filename(info)
-            ydl.download([url])
+    if "instagram.com" in url:
+        await message.answer("🔍 Скачиваю фото с Instagram...")
 
-        with open(filename, "rb") as video:
-            await message.reply_document(video)
+        ydl_opts_preview = {
+            'format': 'best',
+            'outtmpl': 'preview.%(ext)s',
+            'noplaylist': True,
+            'quiet': True,
+        }
 
-        os.remove(filename)
+        ydl_opts_max = {
+            'format': 'best',
+            'outtmpl': 'full_quality.%(ext)s',
+            'noplaylist': True,
+            'quiet': True,
+        }
 
-    except Exception as e:
-        logging.exception("Ошибка при загрузке")
-        await message.reply("❌ Ошибка при загрузке видео. Убедись, что ссылка рабочая.")
+        try:
+            # Скачиваем и отправляем превью
+            with YoutubeDL(ydl_opts_preview) as ydl:
+                info_dict = ydl.extract_info(url, download=True)
+                preview_file = ydl.prepare_filename(info_dict)
 
-# Запуск
-if __name__ == '__main__':
+            await message.answer_photo(FSInputFile(preview_file))
+
+            # Скачиваем и отправляем оригинал
+            with YoutubeDL(ydl_opts_max) as ydl:
+                info_dict = ydl.extract_info(url, download=True)
+                full_file = ydl.prepare_filename(info_dict)
+
+            await message.answer_document(FSInputFile(full_file), caption="Для любителей максимального качества 📷")
+
+            os.remove(preview_file)
+            os.remove(full_file)
+
+        except Exception as e:
+            await message.answer("❌ Ошибка при скачивании Instagram фото.")
+            print(e)
+
+    else:
+        await message.answer("⚠️ Поддерживаются только ссылки на Instagram фото.")
+
+if __name__ == "__main__":
+    from aiogram import executor
     executor.start_polling(dp, skip_updates=True)
