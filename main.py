@@ -1,55 +1,54 @@
 import os
 import logging
-from aiogram import Bot, Dispatcher, types, executor
-from yt_dlp import YoutubeDL
-from aiohttp import ClientSession
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import Message
+from aiogram.utils import executor
+import yt_dlp
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Настройки логирования
 logging.basicConfig(level=logging.INFO)
+
+# Токен Telegram-бота
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-YDL_OPTIONS = {
-    "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-    "outtmpl": "%(title)s.%(ext)s",
-    "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
-    "merge_output_format": "mp4",
+# YDL Опции (лучшее качество без водяных знаков)
+ydl_opts = {
+    'format': 'bestvideo+bestaudio/best',
+    'outtmpl': 'downloads/%(title)s.%(ext)s',
+    'quiet': True,
+    'merge_output_format': 'mp4',
+    'noplaylist': True
 }
 
+# Обработчик команд
+@dp.message_handler(commands=['start', 'help'])
+async def send_welcome(message: Message):
+    await message.reply("Привет! Отправь мне ссылку на видео с YouTube, Instagram или TikTok, и я скачаю его для тебя без водяных знаков в лучшем качестве.")
 
-async def download_video(url: str, output_path: str = "video.mp4") -> str:
-    with YoutubeDL(YDL_OPTIONS) as ydl:
-        info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
-
-
-@dp.message_handler(commands=["start"])
-async def start_cmd(message: types.Message):
-    await message.reply("Привет! Отправь ссылку на видео с YouTube, TikTok или Instagram, и я скачаю его для тебя.")
-
-
-@dp.message_handler()
-async def handle_message(message: types.Message):
+# Обработчик ссылок
+@dp.message_handler(lambda message: any(domain in message.text for domain in ["youtu", "instagram", "tiktok"]))
+async def download_video(message: Message):
     url = message.text.strip()
-
-    if not any(domain in url for domain in ["youtu", "tiktok.com", "instagram.com", "instagr.am"]):
-        await message.reply("Пожалуйста, отправь ссылку на видео с YouTube, TikTok или Instagram.")
-        return
-
-    msg = await message.reply("⏬ Скачиваю видео... Подожди немного.")
+    await message.reply("🔄 Загружаю видео, подожди пару секунд...")
 
     try:
-        file_path = await download_video(url)
-        with open(file_path, "rb") as video:
-            await message.answer_video(video, caption="✅ Готово!")
-        os.remove(file_path)
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            filename = ydl.prepare_filename(info)
+            ydl.download([url])
+
+        with open(filename, "rb") as video:
+            await message.reply_document(video)
+
+        os.remove(filename)
+
     except Exception as e:
-        logging.exception("Ошибка при скачивании:")
-        await msg.edit_text(f"❌ Не удалось скачать видео.\nОшибка: {str(e)}")
+        logging.exception("Ошибка при загрузке")
+        await message.reply("❌ Ошибка при загрузке видео. Убедись, что ссылка рабочая.")
 
-
-if __name__ == "__main__":
+# Запуск
+if __name__ == '__main__':
     executor.start_polling(dp, skip_updates=True)
